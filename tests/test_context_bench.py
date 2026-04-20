@@ -433,3 +433,165 @@ def test_track_deduplicates_files(tmp_path, monkeypatch):
 
     s = load_session("t-s2", session_dir=session_dir)
     assert s["changed_files"].count("/tmp/x.py") == 1
+
+
+# ── Task 8: cmd_learn + apply_decay ──────────────────────────────────────────
+from context_bench import cmd_learn, apply_decay
+from datetime import date, timedelta
+
+
+def test_learn_increases_confidence_when_files_changed(tmp_path, monkeypatch):
+    db_path = str(tmp_path / "projects.json")
+    session_dir = str(tmp_path / "sessions")
+    save_db(
+        Database(
+            projects=[
+                Topic(
+                    id="api",
+                    keywords=["api"],
+                    root="/proj",
+                    paths=["src/api/"],
+                    confidence=0.5,
+                )
+            ]
+        ),
+        db_path=db_path,
+    )
+    save_session(
+        "l-s1",
+        "api",
+        ["/proj/src/api/routes.py"],
+        "fix api",
+        ["/proj/src/api/"],
+        session_dir=session_dir,
+    )
+
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({"session_id": "l-s1"})))
+    with pytest.raises(SystemExit):
+        cmd_learn(db_path=db_path, session_dir=session_dir)
+
+    loaded = load_db(db_path=db_path)
+    assert loaded.projects[0].confidence == pytest.approx(0.65, abs=0.01)
+
+
+def test_learn_decreases_confidence_when_files_not_changed(tmp_path, monkeypatch):
+    db_path = str(tmp_path / "projects.json")
+    session_dir = str(tmp_path / "sessions")
+    save_db(
+        Database(
+            projects=[
+                Topic(
+                    id="api",
+                    keywords=["api"],
+                    root="/proj",
+                    paths=["src/api/"],
+                    confidence=0.5,
+                )
+            ]
+        ),
+        db_path=db_path,
+    )
+    save_session(
+        "l-s2", "api", [], "fix api", ["/proj/src/api/"], session_dir=session_dir
+    )
+
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({"session_id": "l-s2"})))
+    with pytest.raises(SystemExit):
+        cmd_learn(db_path=db_path, session_dir=session_dir)
+
+    loaded = load_db(db_path=db_path)
+    assert loaded.projects[0].confidence == pytest.approx(0.45, abs=0.01)
+
+
+def test_learn_removes_dead_topics(tmp_path, monkeypatch):
+    db_path = str(tmp_path / "projects.json")
+    session_dir = str(tmp_path / "sessions")
+    save_db(
+        Database(
+            projects=[
+                Topic(
+                    id="api",
+                    keywords=["api"],
+                    root="/proj",
+                    paths=["src/"],
+                    confidence=0.2,
+                )
+            ]
+        ),
+        db_path=db_path,
+    )
+    save_session("l-s3", "api", [], "fix api", [], session_dir=session_dir)
+
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({"session_id": "l-s3"})))
+    with pytest.raises(SystemExit):
+        cmd_learn(db_path=db_path, session_dir=session_dir)
+
+    loaded = load_db(db_path=db_path)
+    assert len(loaded.projects) == 0
+
+
+def test_apply_decay_reduces_old_topics():
+    old_date = (date.today() - timedelta(days=40)).isoformat()
+    db = Database(
+        projects=[
+            Topic(
+                id="api",
+                keywords=[],
+                root="/p",
+                paths=[],
+                confidence=0.8,
+                last_used=old_date,
+            )
+        ],
+        settings=Settings(decay_days=30),
+    )
+    apply_decay(db)
+    assert db.projects[0].confidence < 0.8
+
+
+def test_apply_decay_ignores_recent_topics():
+    db = Database(
+        projects=[
+            Topic(
+                id="api",
+                keywords=[],
+                root="/p",
+                paths=[],
+                confidence=0.8,
+                last_used=date.today().isoformat(),
+            )
+        ],
+        settings=Settings(decay_days=30),
+    )
+    apply_decay(db)
+    assert db.projects[0].confidence == pytest.approx(0.8)
+
+
+def test_learn_decay_applied_before_pruning(tmp_path, monkeypatch):
+    """Topic at 0.32 that gets 10 days decay should fall below 0.3 and be removed."""
+    db_path = str(tmp_path / "projects.json")
+    session_dir = str(tmp_path / "sessions")
+    old_date = (date.today() - timedelta(days=40)).isoformat()
+    save_db(
+        Database(
+            projects=[
+                Topic(
+                    id="old",
+                    keywords=["old"],
+                    root="/p",
+                    paths=[],
+                    confidence=0.32,
+                    last_used=old_date,
+                )
+            ]
+        ),
+        db_path=db_path,
+    )
+    save_session("l-s4", None, [], "", [], session_dir=session_dir)
+
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({"session_id": "l-s4"})))
+    with pytest.raises(SystemExit):
+        cmd_learn(db_path=db_path, session_dir=session_dir)
+
+    loaded = load_db(db_path=db_path)
+    assert len(loaded.projects) == 0

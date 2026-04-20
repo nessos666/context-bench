@@ -405,7 +405,77 @@ def cmd_track(session_dir: str = _DEFAULT_SESSION_DIR) -> None:
     sys.exit(0)
 
 
-def cmd_learn() -> None:
+def apply_decay(db: Database) -> None:
+    """Reduce confidence for topics not used within decay_days."""
+    today = date.today()
+    for topic in db.projects:
+        if topic.last_used is None:
+            continue
+        try:
+            last = date.fromisoformat(topic.last_used)
+        except ValueError:
+            continue
+        days_idle = (today - last).days
+        if days_idle > db.settings.decay_days:
+            penalty = (days_idle - db.settings.decay_days) * 0.01
+            topic.confidence = max(0.0, topic.confidence - penalty)
+
+
+def cmd_learn(
+    db_path: str = _DEFAULT_DB_PATH,
+    session_dir: str = _DEFAULT_SESSION_DIR,
+) -> None:
+    """Handle SessionEnd: update confidence based on changed files, then decay."""
+    try:
+        raw = sys.stdin.read()
+        data = json.loads(raw) if raw.strip() else {}
+    except Exception:
+        data = {}
+
+    session_id = data.get("session_id", "")
+
+    try:
+        session = load_session(session_id, session_dir)
+        if session is None:
+            sys.exit(0)
+
+        db = load_db(db_path)
+        if db is None:
+            cleanup_session(session_id, session_dir)
+            sys.exit(0)
+
+        matched_id = session.get("matched_topic")
+        changed_files: list[str] = session.get("changed_files", [])
+        injected_paths: list[str] = session.get("injected_paths", [])
+
+        if matched_id:
+            for topic in db.projects:
+                if topic.id != matched_id:
+                    continue
+                files_used = any(
+                    changed.startswith(inj.rstrip("/"))
+                    for changed in changed_files
+                    for inj in injected_paths
+                )
+                if files_used:
+                    topic.confidence = min(1.0, topic.confidence + 0.15)
+                else:
+                    topic.confidence = max(0.0, topic.confidence - 0.05)
+                break
+
+        # Decay first, then prune
+        apply_decay(db)
+        db.projects = [
+            t
+            for t in db.projects
+            if t.confidence >= db.settings.min_confidence_threshold
+        ]
+
+        save_db(db, db_path)
+        cleanup_session(session_id, session_dir)
+    except Exception as e:
+        _log_error(f"cmd_learn error: {e}")
+
     sys.exit(0)
 
 
