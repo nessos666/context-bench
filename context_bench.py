@@ -9,6 +9,7 @@ import sys
 import tempfile
 from dataclasses import dataclass, field, asdict
 from datetime import date, datetime
+from pathlib import Path
 from typing import Optional
 
 # ── Default paths (overridable via parameters for testing) ───────────────────
@@ -183,6 +184,78 @@ def compute_match_score(prompt: str, topic: Topic) -> float:
     prompt_lower = prompt.lower()
     matches = sum(1 for kw in topic.keywords if kw.lower() in prompt_lower)
     return matches / len(topic.keywords)
+
+
+# ── Loader ───────────────────────────────────────────────────────────────────
+_BINARY_EXTS = {
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".pdf",
+    ".zip",
+    ".tar",
+    ".gz",
+    ".exe",
+    ".so",
+    ".dylib",
+    ".pyc",
+    ".db",
+    ".sqlite",
+    ".bin",
+}
+
+
+def load_context(topic: Topic, max_chars: int) -> str:
+    """Read topic files and build context string. Truncates at max_chars."""
+    header = f"## Projekt-Kontext (auto-geladen)\n\nTopic: {topic.id}\nDateien:\n\n"
+    parts: list[str] = []
+    remaining = max_chars - len(header)
+
+    for rel_path in topic.paths:
+        abs_path = os.path.join(topic.root, rel_path)
+        for file_abs in _collect_files(abs_path):
+            if remaining <= 0:
+                break
+            content = _read_file_safe(file_abs)
+            if content is None:
+                continue
+            rel = os.path.relpath(file_abs, topic.root)
+            section = f"### {rel}\n{content}\n\n"
+            if len(section) > remaining:
+                section = section[:remaining] + "\n[truncated]\n"
+                parts.append(section)
+                remaining = 0
+                break
+            parts.append(section)
+            remaining -= len(section)
+
+    return header + "".join(parts)
+
+
+def _collect_files(path: str) -> list[str]:
+    if os.path.isfile(path):
+        return [path]
+    if os.path.isdir(path):
+        try:
+            return sorted(
+                os.path.join(path, e)
+                for e in os.listdir(path)
+                if os.path.isfile(os.path.join(path, e))
+            )
+        except OSError:
+            return []
+    return []
+
+
+def _read_file_safe(path: str) -> Optional[str]:
+    if Path(path).suffix.lower() in _BINARY_EXTS:
+        return None
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except OSError:
+        return None
 
 
 # ── Hook entry points (implemented in later tasks) ───────────────────────────

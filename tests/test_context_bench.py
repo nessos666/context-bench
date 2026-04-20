@@ -165,3 +165,48 @@ def test_match_score_exactly_at_threshold():
     score = compute_match_score("fix the api", topic)
     assert score == pytest.approx(0.5)
     assert score >= 0.5
+
+
+# ── Task 4: Loader ────────────────────────────────────────────────────────────
+from context_bench import load_context
+
+
+def test_load_single_file(tmp_path):
+    f = tmp_path / "routes.py"
+    f.write_text("def get(): return 42\n")
+    topic = Topic(id="api", keywords=[], root=str(tmp_path), paths=["routes.py"])
+    ctx = load_context(topic, max_chars=8000)
+    assert "routes.py" in ctx
+    assert "def get(): return 42" in ctx
+
+
+def test_load_truncates_at_max_chars(tmp_path):
+    f = tmp_path / "big.py"
+    f.write_text("x" * 10000)
+    topic = Topic(id="big", keywords=[], root=str(tmp_path), paths=["big.py"])
+    ctx = load_context(topic, max_chars=500)
+    assert len(ctx) <= 600
+    assert "[truncated]" in ctx
+
+
+def test_load_directory_lists_files(tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "a.py").write_text("# file a")
+    (src / "b.py").write_text("# file b")
+    topic = Topic(id="src", keywords=[], root=str(tmp_path), paths=["src/"])
+    ctx = load_context(topic, max_chars=8000)
+    assert "# file a" in ctx or "# file b" in ctx
+
+
+def test_load_missing_file_does_not_crash(tmp_path):
+    topic = Topic(id="x", keywords=[], root=str(tmp_path), paths=["nonexistent.py"])
+    ctx = load_context(topic, max_chars=8000)
+    assert isinstance(ctx, str)
+
+
+def test_load_binary_file_skipped(tmp_path):
+    (tmp_path / "image.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    topic = Topic(id="x", keywords=[], root=str(tmp_path), paths=["image.png"])
+    ctx = load_context(topic, max_chars=8000)
+    assert "image.png" not in ctx or "PNG" not in ctx
