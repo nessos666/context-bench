@@ -112,3 +112,13 @@ def test_cleanup_session(tmp_path):
     assert load_session("s4", session_dir=session_dir) is not None
     cleanup_session("s4", session_dir=session_dir)
     assert load_session("s4", session_dir=session_dir) is None
+
+
+def test_save_session_persists_prompt_and_injected_paths(tmp_path):
+    session_dir = str(tmp_path / "sessions")
+    save_session(
+        "s5", "api", [], "fix the route", ["/proj/src/api/"], session_dir=session_dir
+    )
+    s = load_session("s5", session_dir=session_dir)
+    assert s["prompt"] == "fix the route"
+    assert "/proj/src/api/" in s["injected_paths"]

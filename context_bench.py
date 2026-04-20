@@ -92,7 +92,7 @@ def _log_error(msg: str, error_log: str = _DEFAULT_ERROR_LOG) -> None:
     os.makedirs(os.path.dirname(error_log), exist_ok=True)
     try:
         with open(error_log, "a", encoding="utf-8") as f:
-            f.write(f"{date.today().isoformat()} {msg}\n")
+            f.write(f"{datetime.now().isoformat()} {msg}\n")
     except OSError:
         pass
 
