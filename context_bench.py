@@ -325,7 +325,62 @@ def bootstrap(cwd: str, timeout_ms: int = 200) -> Database:
 
 
 # ── Hook entry points (implemented in later tasks) ───────────────────────────
-def cmd_prompt() -> None:
+def cmd_prompt(
+    db_path: str = _DEFAULT_DB_PATH,
+    session_dir: str = _DEFAULT_SESSION_DIR,
+    cwd: Optional[str] = None,
+) -> None:
+    """Handle UserPromptSubmit: read prompt, match topic, inject context."""
+    try:
+        raw = sys.stdin.read()
+        data = json.loads(raw) if raw.strip() else {}
+    except Exception:
+        data = {}
+
+    prompt = data.get("prompt", "")
+    session_id = data.get("session_id", "unknown")
+    if cwd is None:
+        cwd = os.getcwd()
+
+    try:
+        db = load_db(db_path)
+        if db is None:
+            db = bootstrap(cwd)
+            save_db(db, db_path)
+
+        best_topic: Optional[Topic] = None
+        best_score = 0.0
+        for topic in db.projects:
+            if not (cwd == topic.root or cwd.startswith(topic.root + os.sep)):
+                continue
+            score = compute_match_score(prompt, topic)
+            if score > best_score:
+                best_score, best_topic = score, topic
+
+        if best_topic and best_score >= db.settings.match_threshold:
+            context = load_context(best_topic, db.settings.max_context_chars)
+            injected = [os.path.join(best_topic.root, p) for p in best_topic.paths]
+            save_session(session_id, best_topic.id, [], prompt, injected, session_dir)
+
+            best_topic.confidence = min(1.0, best_topic.confidence + 0.05)
+            best_topic.uses += 1
+            best_topic.last_used = date.today().isoformat()
+            save_db(db, db_path)
+
+            output: dict = {
+                "hookSpecificOutput": {
+                    "hookEventName": "UserPromptSubmit",
+                    "additionalContext": context,
+                }
+            }
+        else:
+            save_session(session_id, None, [], prompt, [], session_dir)
+            output = {}
+
+        print(json.dumps(output))
+    except Exception as e:
+        _log_error(f"cmd_prompt error: {e}")
+        print("{}")
     sys.exit(0)
 
 

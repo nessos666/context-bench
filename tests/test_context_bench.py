@@ -1,3 +1,4 @@
+import json
 import subprocess
 import sys
 import os
@@ -250,3 +251,118 @@ def test_bootstrap_completes_within_timeout(tmp_path):
     bootstrap(str(tmp_path), timeout_ms=200)
     elapsed_ms = (time.monotonic() - start) * 1000
     assert elapsed_ms < 400
+
+
+# ── Task 6: cmd_prompt ────────────────────────────────────────────────────────
+import io
+from context_bench import cmd_prompt
+
+
+def _make_db(tmp_path, root=None) -> Database:
+    r = root or str(tmp_path)
+    (tmp_path / "routes.py").write_text("def get_route(): pass\n")
+    return Database(
+        projects=[
+            Topic(
+                id="api",
+                keywords=["api", "route", "endpoint"],
+                root=r,
+                paths=["routes.py"],
+                confidence=0.8,
+            )
+        ]
+    )
+
+
+def test_prompt_injects_context_on_match(tmp_path, monkeypatch, capsys):
+    db_path = str(tmp_path / "projects.json")
+    session_dir = str(tmp_path / "sessions")
+    save_db(_make_db(tmp_path), db_path=db_path)
+
+    monkeypatch.setattr(
+        "sys.stdin",
+        io.StringIO(json.dumps({"prompt": "fix the api route", "session_id": "p-s1"})),
+    )
+    with pytest.raises(SystemExit):
+        cmd_prompt(db_path=db_path, session_dir=session_dir, cwd=str(tmp_path))
+
+    out = capsys.readouterr().out
+    result = json.loads(out)
+    assert "hookSpecificOutput" in result
+    ctx = result["hookSpecificOutput"]["additionalContext"]
+    assert "api" in ctx
+    assert "get_route" in ctx
+
+
+def test_prompt_no_output_on_no_match(tmp_path, monkeypatch, capsys):
+    db_path = str(tmp_path / "projects.json")
+    session_dir = str(tmp_path / "sessions")
+    save_db(_make_db(tmp_path), db_path=db_path)
+
+    monkeypatch.setattr(
+        "sys.stdin",
+        io.StringIO(
+            json.dumps({"prompt": "talk about gardening", "session_id": "p-s2"})
+        ),
+    )
+    with pytest.raises(SystemExit):
+        cmd_prompt(db_path=db_path, session_dir=session_dir, cwd=str(tmp_path))
+
+    out = capsys.readouterr().out
+    assert json.loads(out) == {}
+
+
+def test_prompt_persists_prompt_in_session(tmp_path, monkeypatch, capsys):
+    db_path = str(tmp_path / "projects.json")
+    session_dir = str(tmp_path / "sessions")
+    save_db(_make_db(tmp_path), db_path=db_path)
+
+    monkeypatch.setattr(
+        "sys.stdin",
+        io.StringIO(json.dumps({"prompt": "fix the api route", "session_id": "p-s3"})),
+    )
+    with pytest.raises(SystemExit):
+        cmd_prompt(db_path=db_path, session_dir=session_dir, cwd=str(tmp_path))
+
+    session = load_session("p-s3", session_dir=session_dir)
+    assert session["prompt"] == "fix the api route"
+    assert session["matched_topic"] == "api"
+
+
+def test_prompt_filters_by_cwd(tmp_path, monkeypatch, capsys):
+    """Topics from a different root must NOT be matched."""
+    db_path = str(tmp_path / "projects.json")
+    session_dir = str(tmp_path / "sessions")
+    other_root = str(tmp_path / "other_project")
+    db = Database(
+        projects=[
+            Topic(id="api", keywords=["api", "route"], root=other_root, paths=["src/"])
+        ]
+    )
+    save_db(db, db_path=db_path)
+
+    monkeypatch.setattr(
+        "sys.stdin",
+        io.StringIO(json.dumps({"prompt": "fix the api route", "session_id": "p-s4"})),
+    )
+    with pytest.raises(SystemExit):
+        cmd_prompt(db_path=db_path, session_dir=session_dir, cwd=str(tmp_path))
+
+    out = capsys.readouterr().out
+    assert json.loads(out) == {}
+
+
+def test_prompt_bootstraps_when_no_db(tmp_path, monkeypatch, capsys):
+    db_path = str(tmp_path / "projects.json")
+    session_dir = str(tmp_path / "sessions")
+
+    monkeypatch.setattr(
+        "sys.stdin",
+        io.StringIO(json.dumps({"prompt": "hello world", "session_id": "boot-s1"})),
+    )
+    with pytest.raises(SystemExit):
+        cmd_prompt(db_path=db_path, session_dir=session_dir, cwd=str(tmp_path))
+
+    out = capsys.readouterr().out
+    parsed = json.loads(out)
+    assert parsed == {} or "hookSpecificOutput" in parsed
