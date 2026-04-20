@@ -210,3 +210,43 @@ def test_load_binary_file_skipped(tmp_path):
     topic = Topic(id="x", keywords=[], root=str(tmp_path), paths=["image.png"])
     ctx = load_context(topic, max_chars=8000)
     assert "image.png" not in ctx or "PNG" not in ctx
+
+
+# ── Task 5: Bootstrap ─────────────────────────────────────────────────────────
+import time
+from context_bench import bootstrap
+
+
+def test_bootstrap_detects_python(tmp_path):
+    (tmp_path / "pyproject.toml").write_text('[tool.poetry]\nname="test"')
+    db = bootstrap(str(tmp_path), timeout_ms=500)
+    assert db is not None
+    assert any(t.id == "python" for t in db.projects)
+
+
+def test_bootstrap_detects_node(tmp_path):
+    (tmp_path / "package.json").write_text('{"name": "test"}')
+    db = bootstrap(str(tmp_path), timeout_ms=500)
+    assert any(t.id == "node" for t in db.projects)
+
+
+def test_bootstrap_unknown_returns_empty_db(tmp_path):
+    db = bootstrap(str(tmp_path), timeout_ms=500)
+    assert db is not None
+    assert db.projects == []
+
+
+def test_bootstrap_sets_correct_root(tmp_path):
+    (tmp_path / "pyproject.toml").write_text("")
+    db = bootstrap(str(tmp_path), timeout_ms=500)
+    for topic in db.projects:
+        assert topic.root == str(tmp_path)
+
+
+def test_bootstrap_completes_within_timeout(tmp_path):
+    for i in range(200):
+        (tmp_path / f"file_{i}.py").write_text("x = 1")
+    start = time.monotonic()
+    bootstrap(str(tmp_path), timeout_ms=200)
+    elapsed_ms = (time.monotonic() - start) * 1000
+    assert elapsed_ms < 400

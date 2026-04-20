@@ -258,6 +258,72 @@ def _read_file_safe(path: str) -> Optional[str]:
         return None
 
 
+# ── Bootstrap ─────────────────────────────────────────────────────────────────
+import time as _time
+
+_FRAMEWORK_MARKERS: list[tuple[str, str, list[str], list[str]]] = [
+    (
+        "pyproject.toml",
+        "python",
+        ["python", "pip", "pytest", "uv", "poetry"],
+        ["src/", "tests/"],
+    ),
+    (
+        "requirements.txt",
+        "python",
+        ["python", "pip", "requirements"],
+        ["src/", "tests/"],
+    ),
+    ("setup.py", "python", ["python", "setup", "package"], ["src/", "tests/"]),
+    (
+        "package.json",
+        "node",
+        ["node", "npm", "javascript", "typescript"],
+        ["src/", "lib/"],
+    ),
+    ("go.mod", "go", ["go", "golang", "module"], ["cmd/", "pkg/"]),
+    ("Cargo.toml", "rust", ["rust", "cargo", "crate"], ["src/"]),
+    ("pom.xml", "java", ["java", "maven", "spring"], ["src/main/", "src/test/"]),
+]
+
+
+def bootstrap(cwd: str, timeout_ms: int = 200) -> Database:
+    """Scan cwd for known project patterns. Hard timeout to avoid blocking hooks."""
+    deadline = _time.monotonic() + timeout_ms / 1000.0
+    projects: list[Topic] = []
+    today = date.today().isoformat()
+
+    try:
+        for marker, topic_id, keywords, scan_dirs in _FRAMEWORK_MARKERS:
+            if _time.monotonic() > deadline:
+                break
+            if os.path.exists(os.path.join(cwd, marker)):
+                existing = [
+                    d
+                    for d in scan_dirs
+                    if os.path.isdir(os.path.join(cwd, d))
+                    and _time.monotonic() < deadline
+                ]
+                paths = existing if existing else [marker]
+                projects.append(
+                    Topic(
+                        id=topic_id,
+                        keywords=keywords,
+                        root=cwd,
+                        paths=paths,
+                        confidence=0.5,
+                        uses=0,
+                        last_used=None,
+                        created=today,
+                    )
+                )
+                break
+    except Exception as e:
+        _log_error(f"bootstrap error: {e}")
+
+    return Database(projects=projects)
+
+
 # ── Hook entry points (implemented in later tasks) ───────────────────────────
 def cmd_prompt() -> None:
     sys.exit(0)
