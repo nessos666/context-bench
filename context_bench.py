@@ -384,7 +384,24 @@ def cmd_prompt(
     sys.exit(0)
 
 
-def cmd_track() -> None:
+def cmd_track(session_dir: str = _DEFAULT_SESSION_DIR) -> None:
+    """Handle PostToolUse: record changed file path to session tracker."""
+    try:
+        raw = sys.stdin.read()
+        data = json.loads(raw) if raw.strip() else {}
+    except Exception:
+        data = {}
+
+    session_id = data.get("session_id", "")
+    tool_input = data.get("tool_input", {})
+    changed_file = tool_input.get("file_path") or tool_input.get("path", "")
+
+    try:
+        if session_id and changed_file:
+            add_session_change(session_id, changed_file, session_dir)
+    except Exception as e:
+        _log_error(f"cmd_track error: {e}")
+
     sys.exit(0)
 
 

@@ -366,3 +366,70 @@ def test_prompt_bootstraps_when_no_db(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     parsed = json.loads(out)
     assert parsed == {} or "hookSpecificOutput" in parsed
+
+
+# ── Task 7: cmd_track ─────────────────────────────────────────────────────────
+from context_bench import cmd_track
+
+
+def test_track_records_changed_file(tmp_path, monkeypatch):
+    session_dir = str(tmp_path / "sessions")
+    save_session(
+        "t-s1", "api", [], "fix api", ["/proj/src/api/"], session_dir=session_dir
+    )
+
+    monkeypatch.setattr(
+        "sys.stdin",
+        io.StringIO(
+            json.dumps(
+                {
+                    "session_id": "t-s1",
+                    "tool_input": {"file_path": "/proj/src/api/routes.py"},
+                }
+            )
+        ),
+    )
+    with pytest.raises(SystemExit):
+        cmd_track(session_dir=session_dir)
+
+    s = load_session("t-s1", session_dir=session_dir)
+    assert "/proj/src/api/routes.py" in s["changed_files"]
+
+
+def test_track_no_crash_when_session_missing(tmp_path, monkeypatch):
+    session_dir = str(tmp_path / "sessions")
+    monkeypatch.setattr(
+        "sys.stdin",
+        io.StringIO(
+            json.dumps(
+                {
+                    "session_id": "no-session",
+                    "tool_input": {"file_path": "/tmp/x.py"},
+                }
+            )
+        ),
+    )
+    with pytest.raises(SystemExit):
+        cmd_track(session_dir=session_dir)
+
+
+def test_track_deduplicates_files(tmp_path, monkeypatch):
+    session_dir = str(tmp_path / "sessions")
+    save_session("t-s2", None, ["/tmp/x.py"], "", [], session_dir=session_dir)
+
+    monkeypatch.setattr(
+        "sys.stdin",
+        io.StringIO(
+            json.dumps(
+                {
+                    "session_id": "t-s2",
+                    "tool_input": {"file_path": "/tmp/x.py"},
+                }
+            )
+        ),
+    )
+    with pytest.raises(SystemExit):
+        cmd_track(session_dir=session_dir)
+
+    s = load_session("t-s2", session_dir=session_dir)
+    assert s["changed_files"].count("/tmp/x.py") == 1
