@@ -595,3 +595,62 @@ def test_learn_decay_applied_before_pruning(tmp_path, monkeypatch):
 
     loaded = load_db(db_path=db_path)
     assert len(loaded.projects) == 0
+
+
+# ── Task 9: New topic detection ───────────────────────────────────────────────
+from context_bench import _extract_keywords
+
+
+def test_extract_keywords_from_prompt():
+    kws = _extract_keywords("refactor the api models route endpoint", [])
+    assert "api" in kws
+    assert "models" in kws or "model" in kws
+
+
+def test_extract_keywords_from_filenames():
+    kws = _extract_keywords("", ["/proj/src/api/routes.py", "/proj/src/api/models.py"])
+    assert "routes" in kws or "api" in kws or "models" in kws
+
+
+def test_extract_keywords_excludes_stopwords():
+    kws = _extract_keywords("fix the and or but", [])
+    assert "the" not in kws
+    assert "and" not in kws
+
+
+def test_new_topic_created_when_no_match(tmp_path, monkeypatch):
+    db_path = str(tmp_path / "projects.json")
+    session_dir = str(tmp_path / "sessions")
+    save_db(Database(projects=[]), db_path=db_path)
+    save_session(
+        "n-s1",
+        None,
+        ["/proj/src/api/routes.py"],
+        "refactor api endpoint",
+        [],
+        session_dir=session_dir,
+    )
+
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({"session_id": "n-s1"})))
+    with pytest.raises(SystemExit):
+        cmd_learn(db_path=db_path, session_dir=session_dir)
+
+    loaded = load_db(db_path=db_path)
+    assert len(loaded.projects) >= 1
+    new_topic = loaded.projects[0]
+    assert new_topic.confidence == pytest.approx(0.5)
+    assert len(new_topic.keywords) > 0
+
+
+def test_no_new_topic_when_no_files_changed(tmp_path, monkeypatch):
+    db_path = str(tmp_path / "projects.json")
+    session_dir = str(tmp_path / "sessions")
+    save_db(Database(projects=[]), db_path=db_path)
+    save_session("n-s2", None, [], "hello world", [], session_dir=session_dir)
+
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({"session_id": "n-s2"})))
+    with pytest.raises(SystemExit):
+        cmd_learn(db_path=db_path, session_dir=session_dir)
+
+    loaded = load_db(db_path=db_path)
+    assert len(loaded.projects) == 0

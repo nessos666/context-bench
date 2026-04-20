@@ -405,6 +405,62 @@ def cmd_track(session_dir: str = _DEFAULT_SESSION_DIR) -> None:
     sys.exit(0)
 
 
+_STOPWORDS = {
+    "the",
+    "a",
+    "an",
+    "is",
+    "it",
+    "in",
+    "on",
+    "at",
+    "to",
+    "for",
+    "of",
+    "and",
+    "or",
+    "but",
+    "with",
+    "from",
+    "by",
+    "i",
+    "my",
+    "this",
+    "that",
+    "how",
+    "what",
+    "why",
+    "fix",
+    "add",
+    "get",
+    "make",
+    "run",
+    "do",
+    "can",
+    "will",
+    "please",
+    "want",
+    "need",
+    "hello",
+    "world",
+}
+
+
+def _extract_keywords(prompt: str, changed_files: list[str]) -> list[str]:
+    """Extract meaningful keywords from prompt words + changed file stems."""
+    words: set[str] = set()
+    for w in prompt.lower().split():
+        w = w.strip(".,!?;:'\"()")
+        if len(w) >= 3 and w not in _STOPWORDS and w.isalpha():
+            words.add(w)
+    for f in changed_files:
+        stem = Path(f).stem.lower()
+        for part in stem.replace("-", "_").split("_"):
+            if len(part) >= 3 and part not in _STOPWORDS:
+                words.add(part)
+    return sorted(words)[:10]
+
+
 def apply_decay(db: Database) -> None:
     """Reduce confidence for topics not used within decay_days."""
     today = date.today()
@@ -462,6 +518,34 @@ def cmd_learn(
                 else:
                     topic.confidence = max(0.0, topic.confidence - 0.05)
                 break
+
+        # New topic detection: only when no match but files were changed
+        elif changed_files:
+            prompt_text = session.get("prompt", "")
+            keywords = _extract_keywords(prompt_text, changed_files)
+            if keywords:
+                try:
+                    common = (
+                        os.path.commonpath(changed_files)
+                        if len(changed_files) > 1
+                        else os.path.dirname(changed_files[0])
+                    )
+                except ValueError:
+                    common = os.path.dirname(changed_files[0])
+                rel_paths = list(
+                    dict.fromkeys(os.path.relpath(f, common) for f in changed_files)
+                )[:5]
+                new_topic = Topic(
+                    id=keywords[0],
+                    keywords=keywords,
+                    root=common,
+                    paths=rel_paths,
+                    confidence=0.5,
+                    uses=1,
+                    last_used=date.today().isoformat(),
+                    created=date.today().isoformat(),
+                )
+                db.projects.append(new_topic)
 
         # Decay first, then prune
         apply_decay(db)
