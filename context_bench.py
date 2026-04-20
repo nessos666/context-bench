@@ -410,6 +410,8 @@ def cmd_track(session_dir: str = _DEFAULT_SESSION_DIR) -> None:
     session_id = data.get("session_id", "")
     tool_input = data.get("tool_input", {})
     changed_file = tool_input.get("file_path") or tool_input.get("path", "")
+    if changed_file and not os.path.isabs(changed_file):
+        changed_file = os.path.abspath(changed_file)
 
     try:
         if session_id and changed_file:

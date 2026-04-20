@@ -443,6 +443,29 @@ def test_track_deduplicates_files(tmp_path, monkeypatch):
     assert s["changed_files"].count("/tmp/x.py") == 1
 
 
+def test_track_normalizes_relative_paths(tmp_path, monkeypatch):
+    session_dir = str(tmp_path / "sessions")
+    save_session("t-s3", "api", [], "fix api", [], session_dir=session_dir)
+
+    monkeypatch.setattr(
+        "sys.stdin",
+        io.StringIO(
+            json.dumps(
+                {
+                    "session_id": "t-s3",
+                    "tool_input": {"file_path": "src/api/routes.py"},  # relative path
+                }
+            )
+        ),
+    )
+    with pytest.raises(SystemExit):
+        cmd_track(session_dir=session_dir)
+
+    s = load_session("t-s3", session_dir=session_dir)
+    # must be stored as absolute path
+    assert s["changed_files"][0].startswith("/")
+
+
 # ── Task 8: cmd_learn + apply_decay ──────────────────────────────────────────
 from context_bench import cmd_learn, apply_decay
 from datetime import date, timedelta
