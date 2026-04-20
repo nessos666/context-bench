@@ -30,6 +30,7 @@ class Topic:
     uses: int = 0
     last_used: Optional[str] = None
     created: str = field(default_factory=lambda: date.today().isoformat())
+    last_decay_date: Optional[str] = None  # NEW: track when decay was last applied
 
 
 @dataclass(frozen=True)
@@ -125,8 +126,9 @@ def save_session(
     prompt: str,
     injected_paths: list[str],
     session_dir: str = _DEFAULT_SESSION_DIR,
+    cwd: str = "",
 ) -> None:
-    """Save session state. prompt and injected_paths are needed by cmd_learn."""
+    """Save session state. prompt, injected_paths and cwd are needed by cmd_learn."""
     path = _session_path(session_id, session_dir)
     tmp_fd, tmp_path = tempfile.mkstemp(dir=session_dir, suffix=".tmp")
     try:
@@ -138,6 +140,7 @@ def save_session(
                     "changed_files": changed_files,
                     "prompt": prompt,
                     "injected_paths": injected_paths,
+                    "cwd": cwd,
                 },
                 f,
             )
@@ -211,9 +214,16 @@ def load_context(topic: Topic, max_chars: int) -> str:
     header = f"## Projekt-Kontext (auto-geladen)\n\nTopic: {topic.id}\nDateien:\n\n"
     parts: list[str] = []
     remaining = max_chars - len(header)
+    real_root = os.path.realpath(topic.root)
 
     for rel_path in topic.paths:
         abs_path = os.path.join(topic.root, rel_path)
+        # Security: reject paths that escape topic.root
+        if (
+            not os.path.realpath(abs_path).startswith(real_root + os.sep)
+            and os.path.realpath(abs_path) != real_root
+        ):
+            continue
         for file_abs in _collect_files(abs_path):
             if remaining <= 0:
                 break
@@ -248,12 +258,15 @@ def _collect_files(path: str) -> list[str]:
     return []
 
 
+_MAX_READ_BYTES = 64 * 1024  # 64 KB cap per file before context truncation
+
+
 def _read_file_safe(path: str) -> Optional[str]:
     if Path(path).suffix.lower() in _BINARY_EXTS:
         return None
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
-            return f.read()
+            return f.read(_MAX_READ_BYTES)
     except OSError:
         return None
 
@@ -360,7 +373,9 @@ def cmd_prompt(
         if best_topic and best_score >= db.settings.match_threshold:
             context = load_context(best_topic, db.settings.max_context_chars)
             injected = [os.path.join(best_topic.root, p) for p in best_topic.paths]
-            save_session(session_id, best_topic.id, [], prompt, injected, session_dir)
+            save_session(
+                session_id, best_topic.id, [], prompt, injected, session_dir, cwd=cwd
+            )
 
             best_topic.confidence = min(1.0, best_topic.confidence + 0.05)
             best_topic.uses += 1
@@ -374,7 +389,7 @@ def cmd_prompt(
                 }
             }
         else:
-            save_session(session_id, None, [], prompt, [], session_dir)
+            save_session(session_id, None, [], prompt, [], session_dir, cwd=cwd)
             output = {}
 
         print(json.dumps(output))
@@ -462,9 +477,13 @@ def _extract_keywords(prompt: str, changed_files: list[str]) -> list[str]:
 
 
 def apply_decay(db: Database) -> None:
-    """Reduce confidence for topics not used within decay_days."""
+    """Reduce confidence for topics not used within decay_days. Idempotent per day."""
     today = date.today()
+    today_str = today.isoformat()
     for topic in db.projects:
+        # Skip if decay already applied today
+        if topic.last_decay_date == today_str:
+            continue
         if topic.last_used is None:
             continue
         try:
@@ -475,6 +494,7 @@ def apply_decay(db: Database) -> None:
         if days_idle > db.settings.decay_days:
             penalty = (days_idle - db.settings.decay_days) * 0.01
             topic.confidence = max(0.0, topic.confidence - penalty)
+        topic.last_decay_date = today_str
 
 
 def cmd_learn(
@@ -522,23 +542,35 @@ def cmd_learn(
         # New topic detection: only when no match but files were changed
         elif changed_files:
             prompt_text = session.get("prompt", "")
+            session_cwd = session.get("cwd", "")
             keywords = _extract_keywords(prompt_text, changed_files)
             if keywords:
-                try:
-                    common = (
-                        os.path.commonpath(changed_files)
-                        if len(changed_files) > 1
-                        else os.path.dirname(changed_files[0])
-                    )
-                except ValueError:
-                    common = os.path.dirname(changed_files[0])
+                # Use session cwd as root (matches cmd_prompt filter),
+                # fall back to commonpath only if cwd unknown
+                if session_cwd:
+                    root = session_cwd
+                else:
+                    try:
+                        root = (
+                            os.path.commonpath(changed_files)
+                            if len(changed_files) > 1
+                            else os.path.dirname(changed_files[0])
+                        )
+                    except ValueError:
+                        root = os.path.dirname(changed_files[0])
                 rel_paths = list(
-                    dict.fromkeys(os.path.relpath(f, common) for f in changed_files)
+                    dict.fromkeys(
+                        os.path.relpath(f, root)
+                        for f in changed_files
+                        if f.startswith(root)
+                    )
                 )[:5]
+                if not rel_paths:
+                    rel_paths = [os.path.basename(f) for f in changed_files[:5]]
                 new_topic = Topic(
                     id=keywords[0],
                     keywords=keywords,
-                    root=common,
+                    root=root,
                     paths=rel_paths,
                     confidence=0.5,
                     uses=1,

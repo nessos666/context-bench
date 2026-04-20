@@ -213,6 +213,14 @@ def test_load_binary_file_skipped(tmp_path):
     assert "image.png" not in ctx or "PNG" not in ctx
 
 
+def test_load_rejects_path_traversal(tmp_path):
+    secret = tmp_path.parent / "secret.txt"
+    secret.write_text("TOP SECRET")
+    topic = Topic(id="x", keywords=[], root=str(tmp_path), paths=["../secret.txt"])
+    ctx = load_context(topic, max_chars=8000)
+    assert "TOP SECRET" not in ctx
+
+
 # ── Task 5: Bootstrap ─────────────────────────────────────────────────────────
 import time
 from context_bench import bootstrap
@@ -567,6 +575,27 @@ def test_apply_decay_ignores_recent_topics():
     assert db.projects[0].confidence == pytest.approx(0.8)
 
 
+def test_apply_decay_is_idempotent_within_same_day():
+    old_date = (date.today() - timedelta(days=40)).isoformat()
+    db = Database(
+        projects=[
+            Topic(
+                id="api",
+                keywords=[],
+                root="/p",
+                paths=[],
+                confidence=0.8,
+                last_used=old_date,
+            )
+        ],
+        settings=Settings(decay_days=30),
+    )
+    apply_decay(db)
+    confidence_after_first = db.projects[0].confidence
+    apply_decay(db)  # second call same day — must not reduce further
+    assert db.projects[0].confidence == pytest.approx(confidence_after_first)
+
+
 def test_learn_decay_applied_before_pruning(tmp_path, monkeypatch):
     """Topic at 0.32 that gets 10 days decay should fall below 0.3 and be removed."""
     db_path = str(tmp_path / "projects.json")
@@ -654,3 +683,24 @@ def test_no_new_topic_when_no_files_changed(tmp_path, monkeypatch):
 
     loaded = load_db(db_path=db_path)
     assert len(loaded.projects) == 0
+
+
+def test_new_topic_uses_session_cwd_as_root(tmp_path, monkeypatch):
+    """Learned topic root must equal session cwd, not commonpath of changed files."""
+    db_path = str(tmp_path / "projects.json")
+    session_dir = str(tmp_path / "sessions")
+    save_db(Database(projects=[]), db_path=db_path)
+    # Changed files are deep inside the repo — root should still be cwd
+    cwd = str(tmp_path)
+    changed = [str(tmp_path / "src" / "api" / "routes.py")]
+    save_session(
+        "n-s3", None, changed, "refactor api", [], session_dir=session_dir, cwd=cwd
+    )
+
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({"session_id": "n-s3"})))
+    with pytest.raises(SystemExit):
+        cmd_learn(db_path=db_path, session_dir=session_dir)
+
+    loaded = load_db(db_path=db_path)
+    assert len(loaded.projects) >= 1
+    assert loaded.projects[0].root == cwd
