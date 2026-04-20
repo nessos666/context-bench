@@ -8,7 +8,7 @@ import os
 import sys
 import tempfile
 from dataclasses import dataclass, field, asdict
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 
 # ── Default paths (overridable via parameters for testing) ───────────────────
