@@ -1,31 +1,34 @@
 # Contributing to context-bench
 
-## Development setup
+## Setup
 
 ```bash
-git clone https://github.com/nessos666/context-bench.git
+git clone https://github.com/nessos666/context-bench
 cd context-bench
-python3 -m pytest tests/ -v
+pip install pytest
+pytest tests/ -v
 ```
 
-## Running tests
+## Architecture
 
-```bash
-python3 -m pytest tests/ -v
+`context_bench.py` is one file. Three modes:
+- `prompt` — called by UserPromptSubmit hook
+- `track` — called by PostToolUse hook (Write/Edit/MultiEdit)
+- `learn` — called by SessionEnd hook
+
+State lives in `~/.context-bench/projects.json`.
+
+## Making changes
+
+1. Write a failing test first (TDD)
+2. Implement the minimal fix
+3. All tests must pass: `pytest tests/ -v`
+
+## Commit style
+
 ```
-
-All tests must pass before submitting a pull request.
-
-## Code style
-
-- Python 3.10+
-- Type annotations on all public functions
-- `from __future__ import annotations` at top of every module
-
-## Pull requests
-
-1. Fork the repo
-2. Create a feature branch
-3. Write tests for new functionality
-4. Ensure all tests pass
-5. Submit PR against `main`
+feat: add new feature
+fix: fix a bug
+test: add or fix tests
+docs: documentation only
+```

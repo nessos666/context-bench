@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "projects": [
+    {
+      "id": "parser",
+      "keywords": ["parser", "token", "ast", "lexer", "parse"],
+      "root": "/home/user/rust-parser",
+      "paths": ["src/"],
+      "confidence": 0.75,
+      "uses": 5,
+      "last_used": "2026-04-18",
+      "created": "2026-04-10"
+    }
+  ],
+  "settings": {
+    "max_context_chars": 8000,
+    "min_confidence_threshold": 0.3,
+    "match_threshold": 0.5,
+    "decay_days": 30
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "projects": [
+    {
+      "id": "frontend",
+      "keywords": ["react", "component", "tsx", "hook", "state"],
+      "root": "/home/user/webapp",
+      "paths": ["src/components/", "src/hooks/"],
+      "confidence": 0.9,
+      "uses": 22,
+      "last_used": "2026-04-20",
+      "created": "2026-03-15"
+    }
+  ],
+  "settings": {
+    "max_context_chars": 8000,
+    "min_confidence_threshold": 0.3,
+    "match_threshold": 0.5,
+    "decay_days": 30
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "projects": [
+    {
+      "id": "api",
+      "keywords": ["api", "endpoint", "route", "fastapi", "flask"],
+      "root": "/home/user/myproject",
+      "paths": ["src/api/", "config/api.yaml"],
+      "confidence": 0.87,
+      "uses": 14,
+      "last_used": "2026-04-20",
+      "created": "2026-04-01"
+    }
+  ],
+  "settings": {
+    "max_context_chars": 8000,
+    "min_confidence_threshold": 0.3,
+    "match_threshold": 0.5,
+    "decay_days": 30
+  }
+}
