@@ -2,6 +2,8 @@ import subprocess
 import sys
 import os
 
+import pytest
+
 
 ROOT = os.path.dirname(os.path.dirname(__file__))
 sys.path.insert(0, ROOT)
@@ -122,3 +124,44 @@ def test_save_session_persists_prompt_and_injected_paths(tmp_path):
     s = load_session("s5", session_dir=session_dir)
     assert s["prompt"] == "fix the route"
     assert "/proj/src/api/" in s["injected_paths"]
+
+
+# ── Task 3: Matcher ───────────────────────────────────────────────────────────
+from context_bench import compute_match_score
+
+
+def test_partial_keyword_match():
+    topic = Topic(id="api", keywords=["api", "route", "fastapi"], root="/p", paths=[])
+    score = compute_match_score("fix the api route", topic)
+    assert score == pytest.approx(2 / 3, abs=0.01)
+
+
+def test_no_keyword_match():
+    topic = Topic(id="api", keywords=["api", "route"], root="/p", paths=[])
+    score = compute_match_score("fix the database", topic)
+    assert score == 0.0
+
+
+def test_all_keywords_match():
+    topic = Topic(id="api", keywords=["api", "route"], root="/p", paths=[])
+    score = compute_match_score("fix the api route endpoint", topic)
+    assert score == 1.0
+
+
+def test_empty_keywords():
+    topic = Topic(id="api", keywords=[], root="/p", paths=[])
+    score = compute_match_score("anything", topic)
+    assert score == 0.0
+
+
+def test_case_insensitive():
+    topic = Topic(id="api", keywords=["API"], root="/p", paths=[])
+    score = compute_match_score("fix the api", topic)
+    assert score == 1.0
+
+
+def test_match_score_exactly_at_threshold():
+    topic = Topic(id="api", keywords=["api", "route"], root="/p", paths=[])
+    score = compute_match_score("fix the api", topic)
+    assert score == pytest.approx(0.5)
+    assert score >= 0.5

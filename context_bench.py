@@ -175,6 +175,16 @@ def cleanup_session(session_id: str, session_dir: str = _DEFAULT_SESSION_DIR) ->
         os.unlink(path)
 
 
+# ── Matcher ───────────────────────────────────────────────────────────────────
+def compute_match_score(prompt: str, topic: Topic) -> float:
+    """Returns fraction of topic keywords found in prompt (0.0–1.0)."""
+    if not topic.keywords:
+        return 0.0
+    prompt_lower = prompt.lower()
+    matches = sum(1 for kw in topic.keywords if kw.lower() in prompt_lower)
+    return matches / len(topic.keywords)
+
+
 # ── Hook entry points (implemented in later tasks) ───────────────────────────
 def cmd_prompt() -> None:
     sys.exit(0)
