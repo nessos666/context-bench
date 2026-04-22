@@ -1,0 +1,13 @@
+{
+  "name": "context-bench",
+  "description": "Self-learning hook that auto-injects project context into Claude Code sessions",
+  "version": "1.0.0",
+  "author": {
+    "name": "David Miko",
+    "url": "https://github.com/nessos666"
+  },
+  "homepage": "https://github.com/nessos666/context-bench",
+  "repository": "https://github.com/nessos666/context-bench",
+  "license": "MIT",
+  "keywords": ["context", "hooks", "self-learning", "productivity", "auto-context"]
+}

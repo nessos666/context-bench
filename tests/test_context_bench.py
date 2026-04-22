@@ -127,6 +127,23 @@ def test_save_session_persists_prompt_and_injected_paths(tmp_path):
     assert "/proj/src/api/" in s["injected_paths"]
 
 
+def test_add_session_change_preserves_cwd(tmp_path):
+    session_dir = str(tmp_path / "sessions")
+    save_session(
+        "s6",
+        "api",
+        [],
+        "fix route",
+        ["/proj/src/api/"],
+        session_dir=session_dir,
+        cwd="/proj",
+    )
+    add_session_change("s6", "/proj/src/api.py", session_dir=session_dir)
+    s = load_session("s6", session_dir=session_dir)
+    assert s["cwd"] == "/proj"
+    assert "/proj/src/api.py" in s["changed_files"]
+
+
 # ── Task 3: Matcher ───────────────────────────────────────────────────────────
 from context_bench import compute_match_score
 
@@ -503,6 +520,44 @@ def test_learn_increases_confidence_when_files_changed(tmp_path, monkeypatch):
 
     loaded = load_db(db_path=db_path)
     assert loaded.projects[0].confidence == pytest.approx(0.65, abs=0.01)
+
+
+def test_learn_path_boundary_no_false_match(tmp_path, monkeypatch):
+    """Ensure /proj/src/api2/file.py does NOT match injected path /proj/src/api/."""
+    db_path = str(tmp_path / "projects.json")
+    session_dir = str(tmp_path / "sessions")
+    save_db(
+        Database(
+            projects=[
+                Topic(
+                    id="api",
+                    keywords=["api"],
+                    root="/proj",
+                    paths=["src/api/"],
+                    confidence=0.5,
+                )
+            ]
+        ),
+        db_path=db_path,
+    )
+    save_session(
+        "l-boundary",
+        "api",
+        ["/proj/src/api2/routes.py"],
+        "fix api",
+        ["/proj/src/api/"],
+        session_dir=session_dir,
+    )
+
+    monkeypatch.setattr(
+        "sys.stdin", io.StringIO(json.dumps({"session_id": "l-boundary"}))
+    )
+    with pytest.raises(SystemExit):
+        cmd_learn(db_path=db_path, session_dir=session_dir)
+
+    loaded = load_db(db_path=db_path)
+    # Should decrease (no real overlap), not increase
+    assert loaded.projects[0].confidence == pytest.approx(0.45, abs=0.01)
 
 
 def test_learn_decreases_confidence_when_files_not_changed(tmp_path, monkeypatch):

@@ -2,7 +2,7 @@
 
 **Your AI editor knows what you're working on — automatically.**
 
-A self-learning Claude Code hook that detects your current project from your first message and injects the right file context — without any manual configuration.
+A self-learning Claude Code plugin that detects your current project from your first message and injects the right file context — without any manual configuration.
 
 ## How it works
 
@@ -18,6 +18,16 @@ A self-learning Claude Code hook that detects your current project from your fir
 
 ## Installation
 
+### As Claude Code Plugin (recommended)
+
+```bash
+claude plugin add nessos666/context-bench
+```
+
+That's it. The plugin registers all hooks automatically.
+
+### Standalone (manual)
+
 ```bash
 git clone https://github.com/nessos666/context-bench
 cd context-bench
@@ -26,8 +36,20 @@ cd context-bench
 
 `install.sh` registers three hooks in `~/.claude/settings.json` and copies `context_bench.py` to `~/.context-bench/`.
 
+### Local testing
+
+```bash
+claude --plugin-dir ./context-bench
+```
+
 ## Uninstall
 
+Plugin mode:
+```bash
+claude plugin remove context-bench
+```
+
+Standalone:
 ```bash
 ./uninstall.sh
 ```
@@ -43,6 +65,34 @@ Each project topic has a `confidence` score (0–1):
 - Topic below `0.3` → removed automatically
 
 Topics are stored in `~/.context-bench/projects.json`.
+
+## Bootstrap
+
+On first run (no `projects.json` yet), context-bench scans the current directory for framework markers:
+
+| Marker | Detected as |
+|--------|-------------|
+| `pyproject.toml` / `requirements.txt` / `setup.py` | Python project |
+| `package.json` | Node.js project |
+| `go.mod` | Go project |
+| `Cargo.toml` | Rust project |
+| `pom.xml` | Java project |
+
+The bootstrap completes within 200ms to avoid blocking hooks.
+
+## Architecture
+
+```
+context_bench.py (single file, zero dependencies)
+├── cmd_prompt()  → UserPromptSubmit  → match topic, inject context
+├── cmd_track()   → PostToolUse       → record changed files
+└── cmd_learn()   → SessionEnd        → update confidence, create topics, decay
+```
+
+Data model:
+- **Topic**: id, keywords, root, paths, confidence, uses, last_used
+- **Database**: version, projects[], settings
+- **Session**: matched_topic, changed_files, prompt, injected_paths, cwd
 
 ## Requirements
 
