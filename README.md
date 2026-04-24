@@ -42,6 +42,31 @@ cd context-bench
 claude --plugin-dir ./context-bench
 ```
 
+## Toggle (disable/enable)
+
+To temporarily disable context-bench without uninstalling:
+
+```bash
+touch ~/.context-bench/DISABLED   # disable
+rm ~/.context-bench/DISABLED      # enable again
+```
+
+When disabled, all hooks exit immediately (no context injected, no tracking). The `learn` hook still cleans up session files to prevent leaks.
+
+If you use Claude Code skills, you can add shortcuts:
+
+`~/.claude/commands/ctx-bench-aus.md`:
+```markdown
+Run: mkdir -p ~/.context-bench && touch ~/.context-bench/DISABLED
+Output: "context-bench deactivated"
+```
+
+`~/.claude/commands/ctx-bench-an.md`:
+```markdown
+Run: rm -f ~/.context-bench/DISABLED
+Output: "context-bench active"
+```
+
 ## Uninstall
 
 Plugin mode:
