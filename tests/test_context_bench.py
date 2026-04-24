@@ -797,7 +797,7 @@ def _setup_disabled(tmp_path):
     return cb_dir
 
 
-def test_prompt_exits_zero_when_disabled(tmp_path, monkeypatch, capsys):
+def test_prompt_exits_zero_when_disabled(tmp_path, monkeypatch):
     """prompt gibt {} aus und laeuft durch wenn DISABLED existiert."""
     _setup_disabled(tmp_path)
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
@@ -820,16 +820,10 @@ def test_learn_cleans_up_session_when_disabled(tmp_path, monkeypatch):
     assert load_session("d-s2", session_dir=session_dir) is not None
 
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
-    # cleanup_session has _DEFAULT_SESSION_DIR baked in as a default arg — patch
-    # the function so it uses our session_dir instead.
     import context_bench as _cb
 
-    _orig_cleanup = _cb.cleanup_session
-    monkeypatch.setattr(
-        _cb,
-        "cleanup_session",
-        lambda sid, sd=session_dir: _orig_cleanup(sid, sd),
-    )
+    monkeypatch.setattr(_cb, "_DEFAULT_SESSION_DIR", session_dir)
+    monkeypatch.setattr(_cb.cleanup_session, "__defaults__", (session_dir,))
     monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({"session_id": "d-s2"})))
     monkeypatch.setattr("sys.argv", ["context_bench.py", "learn"])
     with pytest.raises(SystemExit) as exc:
