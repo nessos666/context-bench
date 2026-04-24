@@ -782,3 +782,74 @@ def test_new_topic_uses_session_cwd_as_root(tmp_path, monkeypatch):
     loaded = load_db(db_path=db_path)
     assert len(loaded.projects) >= 1
     assert loaded.projects[0].root == cwd
+
+
+# ── Task 10: DISABLED flag ────────────────────────────────────────────────────
+from pathlib import Path
+from context_bench import main
+
+
+def _setup_disabled(tmp_path):
+    """Create the DISABLED flag at the location main() checks."""
+    cb_dir = tmp_path / ".context-bench"
+    cb_dir.mkdir(parents=True, exist_ok=True)
+    (cb_dir / "DISABLED").touch()
+    return cb_dir
+
+
+def test_prompt_exits_zero_when_disabled(tmp_path, monkeypatch, capsys):
+    """prompt gibt {} aus und laeuft durch wenn DISABLED existiert."""
+    _setup_disabled(tmp_path)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.setattr(
+        "sys.stdin",
+        io.StringIO(json.dumps({"prompt": "fix the api", "session_id": "d-s1"})),
+    )
+    monkeypatch.setattr("sys.argv", ["context_bench.py", "prompt"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 0
+
+
+def test_learn_cleans_up_session_when_disabled(tmp_path, monkeypatch):
+    """learn raeumt Session-Datei auf, auch wenn DISABLED aktiv ist."""
+    cb_dir = _setup_disabled(tmp_path)
+    session_dir = str(cb_dir / "sessions")
+    # Session vorab anlegen
+    save_session("d-s2", "api", [], "fix", [], session_dir=session_dir)
+    assert load_session("d-s2", session_dir=session_dir) is not None
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    # cleanup_session has _DEFAULT_SESSION_DIR baked in as a default arg — patch
+    # the function so it uses our session_dir instead.
+    import context_bench as _cb
+
+    _orig_cleanup = _cb.cleanup_session
+    monkeypatch.setattr(
+        _cb,
+        "cleanup_session",
+        lambda sid, sd=session_dir: _orig_cleanup(sid, sd),
+    )
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({"session_id": "d-s2"})))
+    monkeypatch.setattr("sys.argv", ["context_bench.py", "learn"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 0
+    # Session muss weg sein
+    assert load_session("d-s2", session_dir=session_dir) is None
+
+
+def test_track_exits_zero_when_disabled(tmp_path, monkeypatch):
+    """track macht sofort exit 0 wenn DISABLED existiert."""
+    _setup_disabled(tmp_path)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.setattr(
+        "sys.stdin",
+        io.StringIO(
+            json.dumps({"session_id": "d-s3", "tool_input": {"file_path": "/tmp/x.py"}})
+        ),
+    )
+    monkeypatch.setattr("sys.argv", ["context_bench.py", "track"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 0
