@@ -48,15 +48,26 @@ Fail-safe: Wenn Python kaputt ist, funktioniert `touch ~/.context-bench/DISABLED
 
 ### A) Disable-Check in context_bench.py
 
-Ganz oben in `main()` (vor jeder anderen Logik):
+Nach Mode-Validierung, vor dem Dispatch (nicht literal erste Zeile — sonst werden ungueltige Aufrufe maskiert wenn disabled):
 
 ```python
-DISABLED_FLAG = Path.home() / ".context-bench" / "DISABLED"
-if DISABLED_FLAG.exists():
+# Nach: mode = sys.argv[1] + Validierung dass mode in ("prompt","track","learn")
+_disabled_flag = Path.home() / ".context-bench" / "DISABLED"
+if _disabled_flag.exists():
+    if mode == "learn":
+        # Cleanup laeuft trotzdem — sonst bleiben session files liegen
+        try:
+            raw = sys.stdin.read()
+            data = json.loads(raw) if raw.strip() else {}
+            session_id = data.get("session_id", "")
+            if session_id:
+                cleanup_session(session_id)
+        except Exception:
+            pass
     sys.exit(0)
 ```
 
-Gilt fuer alle drei Subcommands: `prompt`, `track`, `learn`.
+Wichtig: `learn` raeumt auch im disabled-Zustand auf. `prompt` und `track` machen sofort `exit 0`.
 
 ### B) Zwei Skill-Dateien
 
@@ -68,27 +79,33 @@ Gib aus: "context-bench aktiv"
 
 `~/.claude/commands/ctx-bench-aus.md`:
 ```
+mkdir -p ~/.context-bench (sicherstellen dass Verzeichnis existiert).
 Erstelle ~/.context-bench/DISABLED (leere Datei).
 Gib aus: "context-bench deaktiviert"
 ```
 
+Hinweis: mkdir -p noetig, falls context-bench noch nicht installiert war.
+
 ### C) Hooks in settings.json eintragen
 
-Drei Eintraege in `~/.claude/settings.json` unter `"hooks"`:
+Via `install.sh` (idempotent — `already_registered()` verhindert Duplikate). Format mit Pfad-Quotes und Timeouts:
 
 ```json
 "UserPromptSubmit": [
-  { "hooks": [{ "type": "command", "command": "python3 ~/.context-bench/context_bench.py prompt" }] }
+  { "hooks": [{ "type": "command", "command": "python3 \"/home/user/.context-bench/context_bench.py\" prompt", "timeout": 5 }] }
 ],
 "PostToolUse": [
-  { "matcher": "Write|Edit|MultiEdit", "hooks": [{ "type": "command", "command": "python3 ~/.context-bench/context_bench.py track" }] }
+  { "matcher": "Write|Edit|MultiEdit", "hooks": [{ "type": "command", "command": "python3 \"/home/user/.context-bench/context_bench.py\" track", "timeout": 5 }] }
 ],
 "SessionEnd": [
-  { "hooks": [{ "type": "command", "command": "python3 ~/.context-bench/context_bench.py learn" }] }
+  { "hooks": [{ "type": "command", "command": "python3 \"/home/user/.context-bench/context_bench.py\" learn", "timeout": 10 }] }
 ]
 ```
 
-Bestehende Hooks bleiben unveraendert erhalten.
+- Pfade gequotet (sicher bei $HOME mit Leerzeichen)
+- `timeout: 5/10` (verhindert blockierende Hooks)
+- `already_registered()` prueft vor Eintrag — kein Doppel-Eintrag bei Reinstall
+- Bestehende Hooks (context_router.py etc.) bleiben unveraendert
 
 ### D) projects.json bereinigen
 

@@ -618,15 +618,31 @@ def main() -> None:
         print("Usage: context_bench.py [prompt|track|learn]", file=sys.stderr)
         sys.exit(1)
     mode = sys.argv[1]
+    if mode not in ("prompt", "track", "learn"):
+        print(f"Unknown mode: {mode}", file=sys.stderr)
+        sys.exit(1)
+
+    # Disable check: after mode validation, before dispatch.
+    # 'learn' still runs cleanup even when disabled to avoid session file leaks.
+    _disabled_flag = Path.home() / ".context-bench" / "DISABLED"
+    if _disabled_flag.exists():
+        if mode == "learn":
+            try:
+                raw = sys.stdin.read()
+                data = json.loads(raw) if raw.strip() else {}
+                session_id = data.get("session_id", "")
+                if session_id:
+                    cleanup_session(session_id)
+            except Exception:
+                pass
+        sys.exit(0)
+
     if mode == "prompt":
         cmd_prompt()
     elif mode == "track":
         cmd_track()
-    elif mode == "learn":
-        cmd_learn()
     else:
-        print(f"Unknown mode: {mode}", file=sys.stderr)
-        sys.exit(1)
+        cmd_learn()
 
 
 if __name__ == "__main__":

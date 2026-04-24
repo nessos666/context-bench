@@ -36,18 +36,18 @@ def already_registered(hook_list, script):
 
 if not already_registered(hooks.get("UserPromptSubmit", []), script_path):
     hooks.setdefault("UserPromptSubmit", []).append({
-        "hooks": [{"type": "command", "command": f'python3 "{script_path}" prompt'}]
+        "hooks": [{"type": "command", "command": f'python3 "{script_path}" prompt', "timeout": 5}]
     })
 
 if not already_registered(hooks.get("PostToolUse", []), script_path):
     hooks.setdefault("PostToolUse", []).append({
         "matcher": "Write|Edit|MultiEdit",
-        "hooks": [{"type": "command", "command": f'python3 "{script_path}" track'}]
+        "hooks": [{"type": "command", "command": f'python3 "{script_path}" track', "timeout": 5}]
     })
 
 if not already_registered(hooks.get("SessionEnd", []), script_path):
     hooks.setdefault("SessionEnd", []).append({
-        "hooks": [{"type": "command", "command": f'python3 "{script_path}" learn'}]
+        "hooks": [{"type": "command", "command": f'python3 "{script_path}" learn', "timeout": 10}]
     })
 
 with open(settings_path, "w") as f:
